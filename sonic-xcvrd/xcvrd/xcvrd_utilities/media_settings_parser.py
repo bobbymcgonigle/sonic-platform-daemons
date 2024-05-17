@@ -16,6 +16,7 @@ LANE_SPEED_KEY_PREFIX = "speed:"
 VENDOR_KEY = 'vendor_key'
 MEDIA_KEY = 'media_key'
 LANE_SPEED_KEY = 'lane_speed_key'
+MEDIUM_LANE_SPEED_KEY = 'medium_lane_speed_key'
 SYSLOG_IDENTIFIER = "xcvrd"
 helper_logger = logger.Logger(SYSLOG_IDENTIFIER)
 
@@ -61,6 +62,14 @@ def get_lane_speed_key(physical_port, port_speed, lane_count):
 
     return lane_speed_key
 
+def get_is_copper(physical_port):
+    if xcvrd.platform_chassis:
+        try:
+            return xcvrd.platform_chassis.get_sfp(physical_port).get_xcvr_api().is_copper()
+        except (NotImplementedError, AttributeError):
+            helper_logger.log_debug(f"No is_copper() defined for xcvr api on physical port {physical_port}, assuming Copper")
+            return True
+    return True
 
 def get_media_settings_key(physical_port, transceiver_dict, port_speed, lane_count):
     sup_compliance_str = '10/40G Ethernet Compliance Code'
@@ -110,11 +119,16 @@ def get_media_settings_key(physical_port, transceiver_dict, port_speed, lane_cou
         media_key += '-' + '*'
 
     lane_speed_key = get_lane_speed_key(physical_port, port_speed, lane_count)
+
+    medium = "COPPER" if get_is_copper(physical_port) else "OPTICAL"
+    medium_lane_speed_key = medium + str(int(port_speed /lane_count))
+
     # return (vendor_key, media_key, lane_speed_key)
     return {
         VENDOR_KEY: vendor_key,
         MEDIA_KEY: media_key,
-        LANE_SPEED_KEY: lane_speed_key
+        LANE_SPEED_KEY: lane_speed_key,
+        MEDIUM_LANE_SPEED_KEY: medium_lane_speed_key
     }
 
 
@@ -224,6 +238,8 @@ def get_media_settings_value(physical_port, key):
                         return {}
                 else:
                     return media_dict[key[MEDIA_KEY]]
+            elif key[MEDIUM_LANE_SPEED_KEY] in media_dict: # E.g. COPPER50000 or OPTICAL25000
+                return media_dict[key[MEDIUM_LANE_SPEED_KEY]]
             elif DEFAULT_KEY in media_dict:
                 default_dict = media_dict[DEFAULT_KEY]
 
@@ -266,6 +282,8 @@ def get_media_settings_value(physical_port, key):
                     return {}
             else:
                 return media_dict[key[MEDIA_KEY]]
+        elif key[MEDIUM_LANE_SPEED_KEY] in media_dict: # E.g. COPPER50000 or OPTICAL25000
+            return media_dict[key[MEDIUM_LANE_SPEED_KEY]]
         elif DEFAULT_KEY in media_dict:
             return media_dict[DEFAULT_KEY]
         elif len(default_dict) != 0:
